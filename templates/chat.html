@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Chat - {{ username }}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.5.2/socket.io.js"></script>
+</head>
+<body>
+    <div id="chat-container">
+        <h1>Chat Room (User: {{ username }}) <a href="{{ url_for('logout') }}" style="font-size: 0.6em;">Logout</a></h1>
+        <div id="message-display">
+            <!-- Messages will be displayed here -->
+        </div>
+        <div id="input-area">
+            <input type="text" id="message-input" placeholder="Type your message...">
+            <button id="send-button">Send</button>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            // The server now passes the username to the template.
+            const currentUsername = "{{ username }}";
+            let currentSid = null; // Will be set by the server on connect or identified from first message
+
+            const socket = io.connect(location.protocol + '//' + document.domain + ':' + location.port);
+            const messageDisplay = document.getElementById('message-display');
+            const messageInput = document.getElementById('message-input');
+            const sendButton = document.getElementById('send-button');
+
+            function addMessage(msgData) {
+                const messageElement = document.createElement('div');
+                messageElement.classList.add('message');
+
+                // msgData is expected to have 'user', 'message', and 'sid'
+                if (msgData.sid === currentSid) {
+                    messageElement.classList.add('user'); // Message sent by this client's session
+                } else {
+                    messageElement.classList.add('other'); // Message received from others
+                }
+
+                const userPrefix = (msgData.sid === currentSid) ? "Me" : msgData.user;
+                messageElement.textContent = `[${userPrefix}]: ${msgData.message}`;
+                messageDisplay.appendChild(messageElement);
+                messageDisplay.scrollTop = messageDisplay.scrollHeight;
+            }
+
+            socket.on('connect', function() {
+                console.log('Connected to WebSocket. SID:', socket.id);
+                currentSid = socket.id; // Store SID after connection
+                // Server will send 'load_messages' automatically if connect is successful
+            });
+
+            socket.on('disconnect', function() {
+                console.log('Disconnected from WebSocket');
+            });
+
+            socket.on('load_messages', function(messages) {
+                messageDisplay.innerHTML = ''; // Clear current messages
+                messages.forEach(msgData => {
+                    addMessage(msgData); // SID comparison will handle styling
+                });
+            });
+
+            socket.on('receive_message', function(data) {
+                // All messages (including own) are received via this event.
+                // addMessage will use currentSid to style correctly.
+                addMessage(data);
+            });
+
+            function sendMessage() {
+                const messageText = messageInput.value.trim();
+                if (messageText) {
+                    // Client no longer needs to add its own username; server uses session.
+                    // Client also doesn't need to add its own message to display,
+                    // it will come back via 'receive_message' and be styled by SID.
+                    socket.emit('send_message', { 'message': messageText });
+                    messageInput.value = '';
+                }
+            }
+
+            sendButton.addEventListener('click', sendMessage);
+            messageInput.addEventListener('keypress', function(event) {
+                if (event.key === 'Enter') {
+                    sendMessage();
+                }
+            });
+        });
+    </script>
+</body>
+</html>
